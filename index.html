@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="description" content="PARCO_DEI_MONACI">
+  <meta name="description" content="CHANGE_DETECTION">
   <meta name="author" content="ARCANGELO PRIORE">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Potree Viewer – PARCO DEI MONACI</title>
+  <title>Potree Viewer – Change Detection</title>
 
   <link rel="stylesheet" href="./build/potree/potree.css">
   <link rel="stylesheet" href="./libs/jquery-ui/jquery-ui.min.css">
@@ -18,7 +18,7 @@
 
   <div class="potree_container" style="position:absolute; width:100%; height:100%; left:0; top:0;">
     <div id="potree_render_area"
-         style="background-image:url('./build/potree/resources/images/NUOVO_LOGO_FAI.jpg');">
+         style="background-image:url('');">
     </div>
     <div id="potree_sidebar_container"></div>
   </div>
@@ -43,7 +43,7 @@
     viewer.setFOV(60);
     viewer.setPointBudget(12000000);
     viewer.loadSettingsFromURL();
-    viewer.setDescription("Parco dei Monaci - PointCloud");
+    viewer.setDescription("Change Detection - PointCloud");
 
     viewer.loadGUI(() => {
       viewer.setLanguage("en");
@@ -151,8 +151,8 @@
     }
 
     Potree.loadPointCloud(
-      "pointclouds/parco_dei_monaci/cloud.js",
-      "Parco dei Monaci - PointCloud",
+      "pointclouds/change_detection/cloud.js",
+      "Change Detection - PointCloud",
       function (e) {
         const pc = e.pointcloud;
         const mat = pc.material;
