@@ -37,14 +37,6 @@
             "description": ""
         },
         {
-            "name": "classification",
-            "size": 1,
-            "elements": 1,
-            "elementSize": 1,
-            "type": "uint8",
-            "description": ""
-        },
-        {
             "name": "intensity",
             "size": 2,
             "elements": 1,
