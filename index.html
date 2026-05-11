@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="description" content="PETRES_RGB_CHANGE_DETECTION">
+  <meta name="description" content="CHANGE_DETECTION">
   <meta name="author" content="ARCANGELO PRIORE">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Potree Viewer – Petres RGB / Change Detection</title>
+  <title>Potree Viewer – Petres</title>
 
   <link rel="stylesheet" href="./build/potree/potree.css">
   <link rel="stylesheet" href="./libs/jquery-ui/jquery-ui.min.css">
@@ -17,9 +17,7 @@
 <body>
 
   <div class="potree_container" style="position:absolute; width:100%; height:100%; left:0; top:0;">
-    <div id="potree_render_area"
-         style="background-image:url('');">
-    </div>
+    <div id="potree_render_area" style="background-image:url('');"></div>
     <div id="potree_sidebar_container"></div>
   </div>
 
@@ -42,12 +40,11 @@
     viewer.setEDLEnabled(true);
     viewer.setFOV(60);
 
-    // Budget massimo: 30 milioni di punti.
-    // Potree caricherà/renderizzerà dinamicamente fino a questo limite.
+    // Massimo numero di punti renderizzabili/caricabili dal viewer
     viewer.setPointBudget(30000000);
 
     viewer.loadSettingsFromURL();
-    viewer.setDescription("Petres - RGB originale / Change Detection C2C");
+    viewer.setDescription("Petres - RGB originale / Change Detection C2C / 2016");
 
     viewer.loadGUI(() => {
       viewer.setLanguage("en");
@@ -55,10 +52,8 @@
       $("#menu_scene").next().show();
     });
 
-    const pointclouds = [];
-    let loadedClouds = 0;
-
     function addPointSizeSliderToAppearance(materials) {
+      const material = materials[0];
       const $appearancePanel = $("#menu_appearance").next();
 
       if ($appearancePanel.length === 0) {
@@ -78,15 +73,13 @@
         v === "ADAPTIVE" ? Potree.PointSizeType.ADAPTIVE :
         Potree.PointSizeType.FIXED;
 
-      const referenceMaterial = materials[0];
-
       const block = $(`
         <div class="pv-menu-list" id="ap_pointsize_block">
           <div class="pv-menu-entry">
 
             <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
               <span>Point size</span>
-              <span id="ap_pointsize_val">${referenceMaterial.size.toFixed(1)}</span>
+              <span id="ap_pointsize_val">${material.size.toFixed(1)}</span>
             </div>
 
             <div id="ap_pointsize_slider" style="margin:0 4px;"></div>
@@ -112,17 +105,18 @@
       const $fovBlock = $appearancePanel.find(".pv-menu-list").first();
       $fovBlock.after(block);
 
-      $("#ap_pointsize_type").val(typeToValue(referenceMaterial.pointSizeType));
+      $("#ap_pointsize_type").val(typeToValue(material.pointSizeType));
 
       $("#ap_pointsize_slider").slider({
         min: 0.5,
         max: 10,
         step: 0.1,
-        value: referenceMaterial.size,
+        value: material.size,
         slide: function (e, ui) {
-          materials.forEach(material => {
-            material.size = ui.value;
+          materials.forEach(m => {
+            m.size = ui.value;
           });
+
           $("#ap_pointsize_val").text(ui.value.toFixed(1));
         }
       });
@@ -130,10 +124,6 @@
       function applyMode(mode) {
         const $slider = $("#ap_pointsize_slider");
         const $note = $("#ap_pointsize_note");
-
-        materials.forEach(material => {
-          material.pointSizeType = valueToType(mode);
-        });
 
         if (mode === "ATTENUATED") {
           $slider.slider("disable");
@@ -149,9 +139,11 @@
 
           if ($slider.slider("value") > 3) {
             $slider.slider("value", 3);
-            materials.forEach(material => {
-              material.size = 3;
+
+            materials.forEach(m => {
+              m.size = 3;
             });
+
             $("#ap_pointsize_val").text("3.0");
           }
         } else {
@@ -159,15 +151,29 @@
         }
       }
 
-      applyMode(typeToValue(referenceMaterial.pointSizeType));
+      applyMode(typeToValue(material.pointSizeType));
 
       $("#ap_pointsize_type").on("change", function () {
         const mode = $(this).val();
+        const pointSizeType = valueToType(mode);
+
+        materials.forEach(m => {
+          m.pointSizeType = pointSizeType;
+        });
+
         applyMode(mode);
       });
     }
 
+    let loadedClouds = 0;
+
+    let rgbCloud = null;
+    let c2cCloud = null;
+    let cloud2016 = null;
+
     function configurePointCloud(pointcloud, visible) {
+      pointcloud.visible = visible;
+
       const mat = pointcloud.material;
 
       mat.activeAttributeName = "rgba";
@@ -175,20 +181,20 @@
       mat.minSize = 2;
       mat.pointSizeType = Potree.PointSizeType.FIXED;
 
-      pointcloud.visible = visible;
-
       viewer.scene.addPointCloud(pointcloud);
-      pointclouds.push(pointcloud);
 
       loadedClouds += 1;
 
-      if (loadedClouds === 2) {
-        // Di default è visibile solo la nuvola RGB originale.
-        pointclouds[0].visible = true;
-        pointclouds[1].visible = false;
-
+      if (loadedClouds === 3) {
         viewer.fitToScreen();
-        addPointSizeSliderToAppearance(pointclouds.map(pc => pc.material));
+
+        const materials = [
+          rgbCloud.material,
+          c2cCloud.material,
+          cloud2016.material
+        ];
+
+        addPointSizeSliderToAppearance(materials);
       }
     }
 
@@ -196,7 +202,8 @@
       "./pointclouds/petres_rgb/cloud.js",
       "Petres - RGB originale",
       function (e) {
-        configurePointCloud(e.pointcloud, true);
+        rgbCloud = e.pointcloud;
+        configurePointCloud(rgbCloud, true);
       }
     );
 
@@ -204,7 +211,17 @@
       "./pointclouds/petres_c2c/cloud.js",
       "Petres - Change Detection C2C",
       function (e) {
-        configurePointCloud(e.pointcloud, false);
+        c2cCloud = e.pointcloud;
+        configurePointCloud(c2cCloud, false);
+      }
+    );
+
+    Potree.loadPointCloud(
+      "./pointclouds/petres_2016/cloud.js",
+      "Petres - 2016",
+      function (e) {
+        cloud2016 = e.pointcloud;
+        configurePointCloud(cloud2016, false);
       }
     );
   </script>
