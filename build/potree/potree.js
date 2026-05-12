@@ -87190,64 +87190,183 @@ ENDSEC
 
 	let fakeCam = new PerspectiveCamera();
 
-	function toScene(vec, ref){
-		let node = ref.clone();
-		node.updateMatrix();
-		node.updateMatrixWorld();
+function toScene(vec, ref){
+	let node = ref.clone();
+	node.updateMatrix();
+	node.updateMatrixWorld();
 
-		let result = vec.clone().applyMatrix4(node.matrix);
-		result.z -= 0.8 * node.scale.x;
+	let result = vec.clone().applyMatrix4(node.matrix);
+	result.z -= 0.8 * node.scale.x;
 
-		return result;
+	return result;
+};
+
+function getThumbstickAxes(controller){
+
+	if(!controller || !controller.inputSource || !controller.inputSource.gamepad){
+		return null;
+	}
+
+	let pad = controller.inputSource.gamepad;
+	let axes = pad.axes || [];
+
+	let x = 0;
+	let y = 0;
+
+	if(axes.length >= 4){
+		x = axes[2];
+		y = axes[3];
+	}else if(axes.length >= 2){
+		x = axes[0];
+		y = axes[1];
+	}else{
+		return null;
+	}
+
+	const DEADZONE = 0.15;
+
+	if(Math.abs(x) < DEADZONE){ x = 0; }
+	if(Math.abs(y) < DEADZONE){ y = 0; }
+
+	return {x: x, y: y};
+}
+
+function getSceneMoveFactors(vrControls){
+
+	let maxSize = 0;
+	for(let pc of viewer.scene.pointclouds){
+		let size = pc.boundingBox.min.distanceTo(pc.boundingBox.max);
+		maxSize = Math.max(maxSize, size);
+	}
+
+	let multiplicator = Math.pow(maxSize, 0.5) / 2;
+	let scale = vrControls.node.scale.x;
+	let moveSpeed = viewer.getMoveSpeed();
+
+	return {
+		multiplicator: multiplicator,
+		scale: scale,
+		moveSpeed: moveSpeed
 	};
+}
 
-	function computeMove(vrControls, controller){
+function getHorizontalViewAxes(vrControls){
 
-		if(!controller || !controller.inputSource || !controller.inputSource.gamepad){
-			return null;
-		}
+	let camVR = vrControls.viewer.renderer.xr.getCamera(fakeCam);
 
-		let pad = controller.inputSource.gamepad;
+	let vrPos = camVR.getWorldPosition(new Vector3());
+	let vrDir = camVR.getWorldDirection(new Vector3());
 
-		let axes = pad.axes;
-		// [0,1] are for touchpad, [2,3] for thumbsticks?
-		let y = 0;
-		if(axes.length === 2){
-			y = axes[1];
-		}else if(axes.length === 4){
-			y = axes[3];
-		}
+	// porto direzione e posizione nel sistema scena Potree
+	let scenePos = toScene(vrPos, vrControls.node);
+	let sceneLook = toScene(vrPos.clone().add(vrDir), vrControls.node);
 
-		y = Math.sign(y) * (2 * y) ** 2;
+	let forward = sceneLook.sub(scenePos);
+	forward.z = 0;
 
-		let maxSize = 0;
-		for(let pc of viewer.scene.pointclouds){
-			let size = pc.boundingBox.min.distanceTo(pc.boundingBox.max);
-			maxSize = Math.max(maxSize, size);
-		}
-		let multiplicator = Math.pow(maxSize, 0.5) / 2;
+	if(forward.lengthSq() === 0){
+		forward.set(0, 1, 0);
+	}
 
-		let scale = vrControls.node.scale.x;
-		let moveSpeed = viewer.getMoveSpeed();
-		let amount = multiplicator * y * (moveSpeed ** 0.5) / scale;
+	forward.normalize();
 
+	// asse destro coerente col punto di vista
+	let right = new Vector3().crossVectors(forward, new Vector3(0, 0, 1)).normalize();
 
-		let rotation = new Quaternion().setFromEuler(controller.rotation);
-		let dir = new Vector3(0, 0, -1);
-		dir.applyQuaternion(rotation);
+	return {forward: forward, right: right};
+}
 
-		let move = dir.clone().multiplyScalar(amount);
+function computeLeftStickMove(vrControls){
 
-		let p1 = vrControls.toScene(controller.position);
-		let p2 = vrControls.toScene(controller.position.clone().add(move));
+	let controller = vrControls.cPrimary;
+	let stick = getThumbstickAxes(controller);
 
-		move = p2.clone().sub(p1);
-		
-		return move;
-	};
+	if(!stick){
+		return new Vector3();
+	}
 
+	let y = Math.sign(stick.y) * Math.pow(Math.abs(stick.y), 2);
 
-	class FlyMode{
+	let factors = getSceneMoveFactors(vrControls);
+
+	const verticalBoost = 1.8;
+
+	let amountVertical = verticalBoost
+		* factors.multiplicator
+		* y
+		* Math.pow(factors.moveSpeed, 0.5)
+		/ factors.scale;
+
+	let move = new Vector3();
+	move.add(new Vector3(0, 0, amountVertical));
+
+	return move;
+}
+
+function computeLeftStickTurn(vrControls){
+
+	let controller = vrControls.cPrimary;
+	let stick = getThumbstickAxes(controller);
+
+	if(!stick){
+		return 0;
+	}
+
+	const TURN_DEADZONE = 0.15;
+	const TURN_SPEED = 1.8;
+
+	let x = stick.x;
+
+	if(Math.abs(x) < TURN_DEADZONE){
+		return 0;
+	}
+
+	let turn = Math.sign(x) * Math.pow(Math.abs(x), 2) * TURN_SPEED;
+
+	return turn;
+}
+
+function computeRightStickMove(vrControls){
+
+	let controller = vrControls.cSecondary;
+	let stick = getThumbstickAxes(controller);
+
+	if(!stick){
+		return new Vector3();
+	}
+
+	let x = Math.sign(stick.x) * Math.pow(Math.abs(stick.x), 2);
+	let y = Math.sign(stick.y) * Math.pow(Math.abs(stick.y), 2);
+
+	let factors = getSceneMoveFactors(vrControls);
+	let axes = getHorizontalViewAxes(vrControls);
+
+	const rightStickSpeedBoost = 5; // aumenta qui: 2.0, 2.5, 3.0...
+
+	let amountForward = rightStickSpeedBoost
+		* factors.multiplicator
+		* y
+		* Math.pow(factors.moveSpeed, 0.5)
+		/ factors.scale;
+
+	let amountStrafe = rightStickSpeedBoost
+		* factors.multiplicator
+		* x
+		* Math.pow(factors.moveSpeed, 0.5)
+		/ factors.scale;
+
+	let move = new Vector3();
+
+	// su = avanti rispetto a dove guardi
+	move.add(axes.forward.clone().multiplyScalar(amountForward));
+
+	// destra = destra rispetto a dove guardi
+	move.add(axes.right.clone().multiplyScalar(amountStrafe));
+
+	return move;
+}
+
+class FlyMode{
 
 		constructor(vrControls){
 			this.moveFactor = 1;
@@ -87270,24 +87389,25 @@ ENDSEC
 		update(vrControls, delta){
 
 			let primary = vrControls.cPrimary;
-			let secondary = vrControls.cSecondary;
 
-			let move1 = computeMove(vrControls, primary);
-			let move2 = computeMove(vrControls, secondary);
+let moveLeft = computeLeftStickMove(vrControls);
+let moveRight = computeRightStickMove(vrControls);
 
+let move = moveLeft.clone().add(moveRight);
 
-			if(!move1){
-				move1 = new Vector3();
-			}
+move.multiplyScalar(-delta * this.moveFactor);
+vrControls.node.position.add(move);
 
-			if(!move2){
-				move2 = new Vector3();
-			}
+let smoothTurn = computeLeftStickTurn(vrControls);
 
-			let move = move1.clone().add(move2);
-
-			move.multiplyScalar(-delta * this.moveFactor);
-			vrControls.node.position.add(move);
+if(smoothTurn !== 0){
+	vrControls.node.rotateOnWorldAxis(
+		new Vector3(0, 0, 1),
+		-smoothTurn * delta
+	);
+	vrControls.node.updateMatrix();
+	vrControls.node.updateMatrixWorld();
+}
 			
 
 			let scale = vrControls.node.scale.x;
